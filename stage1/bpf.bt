@@ -1,0 +1,15 @@
+kprobe:__x64_sys_clone
+{
+  $t = (struct task_struct *)curtask;
+
+  printf("PID: %d\n", pid);
+  printf("  user_ns:   %u\n", $t->cred->user_ns->ns.inum);
+  printf("  uts_ns:    %u\n", $t->nsproxy->uts_ns->ns.inum);
+  printf("  ipc_ns:    %u\n", $t->nsproxy->ipc_ns->ns.inum);
+  printf("  mnt_ns:    %u\n", $t->nsproxy->mnt_ns->ns.inum);
+  printf("  pid_ns:    %u\n", $t->nsproxy->pid_ns_for_children->ns.inum);
+  printf("  net_ns:    %u\n", $t->nsproxy->net_ns->ns.inum);
+  printf("  time_ns:   %u\n", $t->nsproxy->time_ns->ns.inum);
+  printf("  cgroup_ns: %u\n", $t->nsproxy->cgroup_ns->ns.inum);
+  printf("  command: %s\n", $t->comm);
+}

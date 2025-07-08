@@ -1,0 +1,44 @@
+#cloud-config
+bootcmd:
+  - |
+    mkdir -p /etc/systemd/system/minimal.target.wants
+
+    cat > /etc/systemd/system/minimal.target <<EOF
+    [Unit]
+    Description=Minimal target
+    Requires=basic.target systemd-user-sessions.service
+    After=basic.target systemd-user-sessions.service
+    AllowIsolate=yes
+    EOF
+
+    cat > /etc/systemd/system/bash-on-tty1.service <<EOF
+    [Unit]
+    Description=Bash shell on tty1
+    After=minimal.target
+
+    [Service]
+    User=ubuntu
+    ExecStart=/bin/bash
+    StandardInput=tty
+    StandardOutput=tty
+    StandardError=tty
+    TTYPath=/dev/tty1
+    TTYReset=yes
+    TTYVHangup=yes
+    TTYVTDisallocate=yes
+    Type=simple
+    ExecStop=/bin/kill -9 $MAINPID
+    KillMode=process
+    TimeoutStopSec=10s
+    KillSignal=SIGKILL
+    Restart=no
+
+    [Install]
+    WantedBy=minimal.target
+    EOF
+
+    ln -sf /etc/systemd/system/bash-on-tty1.service /etc/systemd/system/minimal.target.wants/bash-on-tty1.service
+    ln -sf /lib/systemd/system/systemd-user-sessions.service /etc/systemd/system/minimal.target.wants/systemd-user-sessions.service
+
+
+    systemctl set-default minimal.target

@@ -1,152 +1,61 @@
-# Изолированный linux контейнер с сетью
+# Препарируем Docker
 
-## Цель: создать изолированный процесс с сетевым доступом
+## Цель: изучить внутренюю архитектуру docker
 
-### План создания процесса на примере реализации через shell:
-
-Создаем изолированный процесс в со статически скомпилированным бинарным файлом
-[busybox](https://github.com/mirror/busybox/), который занимает 2Мб после сборки.
-
-Структура файловой системы:
-
+В первом терминале
+```shell
+$ 
+sudo strace -qqq  -e signal=none --decode-pids=comm,pidns -z -e execve,setns,pivot_root,chroot,unshare --decode-fds -f -p $(pidof containerd)
+```
+В втором терминале
+```shell
+docker run -d busybox sleep 100
+```
 ```text
-/
-├── sbin
-    └── busybox (исполняемый файл)
-├── proc (для монтирования псевдофайловой системы proc)
-└── sys (не обязательно, для монтирования псевдофайловой системы sysfs)
-
+cbab362df10ada42d7055a2029f1ff0420aa3e1945de248445200a3145cb21ec
 ```
-
-Создаем контейнер
-
-```shell
-unshare --root=$(PWD)/container \ # монтируем файловую систему
-        --map-root-user \ # мепит юзера на хосте на суперюзера в контейнере
-        --uts \ # изолированное пространство хоста (для смены hostname и domainname)
-        --net \ # изолированное пространство сети
-        --ipc \ # изолированное пространство межпроцессорного взаимодействия
-        --mount \ # изолированное файловое пространство
-        --pid \ # изолированное пространство процессов
-        --user \ # изолированное пространство пользователя
-        --cgroup \ # изолированное пространство контрольных групп
-        --fork \ # запуск в отдельном процессе
-        --mount-proc \ # монтируем псевдофайловую систему proc
-        busybox sh \ # запускаем оболочку из бинарника busybox
-```
-
-В запустившейся оболочке контейнера для удобства работы можно сделать так: 
-```shell
-for cmd in $(busybox --list); do busybox ln -sf busybox /bin/$cmd; done
-hostname busybox
-PS1='\h:$ '
-```
-
-Убеждаемся что появился изолированное пространство процессов и изолированная сеть
+В первом видим:
 ```text
-busybox:$ ps
-PID   USER     TIME  COMMAND
-    1 0         0:00 /busybox sh
-    6 0         0:00 /busybox ps
-busybox:$ ip link
-1: lo: <LOOPBACK> mtu 65536 qdisc noop qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-
+[pid 2558483<containerd>] 08:06:15 execve("/snap/docker/3064/bin/containerd-shim-runc-v2", ["/snap/docker/3064/bin/containerd"..., "-namespace", "moby", "-address", "/run/snap.docker/containerd/cont"..., "-publish-binary", "/snap/docker/3064/bin/containerd", "-id", "cbab362df10ada42d7055a2029f1ff04"..., "start"], 0xc0004c8600 /* 44 vars */) = 0
+[pid 2558490<containerd-shim>] 08:06:15 execve("/snap/docker/3064/bin/containerd-shim-runc-v2", ["/snap/docker/3064/bin/containerd"..., "-namespace", "moby", "-id", "cbab362df10ada42d7055a2029f1ff04"..., "-address", "/run/snap.docker/containerd/cont"...], 0xc0001ce480 /* 44 vars */) = 0
+[pid 2558500<containerd-shim>] 08:06:15 execve("/snap/docker/3064/bin/runc", ["runc", "--root", "/run/snap.docker/runtime-runc/mo"..., "--log", "/run/snap.docker/containerd/daem"..., "--log-format", "json", "--systemd-cgroup", "create", "--bundle", "/run/snap.docker/containerd/daem"..., "--pid-file", "/run/snap.docker/containerd/daem"..., "cbab362df10ada42d7055a2029f1ff04"...], 0xc0003a9680 /* 44 vars */) = 0
+[pid 2558508<runc>] 08:06:15 execve("/proc/self/fd/6", ["runc", "init"], ["GOMAXPROCS=4", "_LIBCONTAINER_INITPIPE=3", "_LIBCONTAINER_SYNCPIPE=4", "_LIBCONTAINER_LOGPIPE=5", "_LIBCONTAINER_LOGLEVEL=4", "_LIBCONTAINER_FIFOFD=7", "_LIBCONTAINER_INITTYPE=standard"]) = 0
+[pid 2558510<runc:[1:CHILD]>] 08:06:15 unshare(CLONE_NEWNS|CLONE_NEWCGROUP|CLONE_NEWUTS|CLONE_NEWIPC|CLONE_NEWPID|CLONE_NEWNET) = 0
+[pid 2558509<runc>] 08:06:15 unshare(CLONE_FS) = 0
+[pid 2558509<runc>] 08:06:15 setns(14<mnt:[4026533533]>, CLONE_NEWNS) = 0
+[pid 2558518<runc>] 08:06:15 execve("/proc/2413190/exe", ["libnetwork-setkey", "-exec-root=/run/snap.docker", "cbab362df10ada42d7055a2029f1ff04"..., "8db4e8bb2b63"], 0xc000002900 /* 44 vars */) = 0
+[pid 2558511<runc:[2:INIT]>] 08:06:15 pivot_root(".", ".") = 0
+[pid 2558527<containerd-shim>] 08:06:15 execve("/snap/docker/3064/bin/runc", ["runc", "--root", "/run/snap.docker/runtime-runc/mo"..., "--log", "/run/snap.docker/containerd/daem"..., "--log-format", "json", "--systemd-cgroup", "start", "cbab362df10ada42d7055a2029f1ff04"...], 0xc0000ea480 /* 44 vars */) = 0
+[pid 2558511<runc:[2:INIT]>] 08:06:15 execve("/bin/sleep", ["sleep", "100"], 0xc0000243a0 /* 3 vars */) = 0
 ```
 
-А также изолированное пространство межпроцесного взаимодействия 
-(т.е. не отображается семафоров очередей и сегменов совместно используемой памяти)
+В терминале 1:
+```shell
+$ 
+sudo strace -qqq  -e signal=none --decode-pids=comm -z -e %ipc,execve,setns,pivot_root,chroot,unshare --decode-fds -f -p $(pidof containerd-shim-runc-v2)
+```
+
+Далее в терминале 2:
+```shell
+
+docker exec -ti cbab sh
+```
+
+В терминале 1 видим:
 ```text
-busybox:$ ipcs
-
------- Message Queues --------
-key        msqid      owner      perms      used-bytes   messages    
-
------- Shared Memory Segments --------
-key        shmid      owner      perms      bytes      nattch     status      
-
------- Semaphore Arrays --------
-key        semid      owner      perms      nsems  
+[pid 2558639<containerd-shim>] execve("/snap/docker/3064/bin/runc", ["runc", "--root", "/run/snap.docker/runtime-runc/mo"..., "--log", "/run/snap.docker/containerd/daem"..., "--log-format", "json", "--systemd-cgroup", "exec", "--process", "/var/snap/docker/common/run/runc"..., "--console-socket", "/var/snap/docker/common/run/pty4"..., "--detach", "--pid-file", "/run/snap.docker/containerd/daem"..., "cbab362df10ada42d7055a2029f1ff04"...], 0xc0002d1680 /* 44 vars */) = 0
+[pid 2558648<runc>] execve("/proc/self/fd/7", ["runc", "init"], ["GOMAXPROCS=4", "_LIBCONTAINER_CONSOLE=3", "_LIBCONTAINER_INITPIPE=4", "_LIBCONTAINER_SYNCPIPE=5", "_LIBCONTAINER_LOGPIPE=6", "_LIBCONTAINER_LOGLEVEL=4", "_LIBCONTAINER_INITTYPE=setns"]) = 0
+[pid 2558648<runc:[1:CHILD]>] setns(9<ipc:[4026533535]>, CLONE_NEWIPC) = 0
+[pid 2558648<runc:[1:CHILD]>] setns(12<uts:[4026533534]>, CLONE_NEWUTS) = 0
+[pid 2558648<runc:[1:CHILD]>] setns(13<net:[4026533538]>, CLONE_NEWNET) = 0
+[pid 2558648<runc:[1:CHILD]>] setns(14<pid:[4026533536]>, CLONE_NEWPID) = 0
+[pid 2558648<runc:[1:CHILD]>] setns(15<mnt:[4026533533]>, CLONE_NEWNS) = 0
+[pid 2558648<runc:[1:CHILD]>] setns(16<cgroup:[4026533537]>, CLONE_NEWCGROUP) = 0
+[pid 2558648<runc:[1:CHILD]>] unshare(0) = 0
+[pid 2558649<runc:[2:INIT]>] execve("/bin/sh", ["sh"], 0xc0001f8720 /* 4 vars */) = 0
 ```
 
-А также можно убедится в изоляции cgroup
-```text
-busybox:$ mount -t sysfs sysfs /sys
-busybox:$ ls -lF /sys/fs/cgroup/
-total 0
-busybox:$ mount -t cgroup2 none /sys/fs/cgroup
-busybox:$ tree /sys/fs/cgroup/
-/sys/fs/cgroup/
-├── cgroup.controllers
-...
-└── pids.peak
+wtf unshare(0) = 0 ? (see [nsexec.c](https://github.com/opencontainers/runc/blob/main/libcontainer/nsenter/nsexec.c))
 
-0 directories, 49 files
-```
 
-Создаем виртуальную сетевую пару veth1 (хост) <-> veth2 (контейнер) 
-
-```shell
-# виртуальная пара между процессами 
-# в разных анонимных (идентифицируем по pid) сетевых пространствах
-PID=$(ps -C unshare -o pid=); \
- sudo ip link add veth1 netns $PID type veth peer name veth2 netns 1
-```
-
-Конфигурируем сетевой интерфейс на хосте
-
-```shell
-# Добавляем адрес
-sudo ip a add 192.168.100.200 dev veth2
-# Поднимаем интерфейс
-sudo ip link set veth2 
-# Добавляем маршруты для подсети
-sudo ip route add 192.168.100.0/24 dev veth2
-```
-
-Аналогично конфигурируем сетевой интерфейс в контейнере
-
-```shell
-busybox:$ ip a add 192.168.100.100/24 dev veth1
-busybox:$ ip link set veth1 up
-busybox:$ ip route add 192.168.100.0/24 dev veth1
-```
-
-Проверяем корректность настройки в контейнере
-```shell
-busybox:$ ip a
-1: lo: <LOOPBACK> mtu 65536 qdisc noop qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-2: veth1@if707: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue qlen 1000
-    link/ether be:99:12:0f:db:9d brd ff:ff:ff:ff:ff:ff
-    inet 192.168.100.100/24 scope global veth1
-       valid_lft forever preferred_lft forever
-    inet6 fe80::bc99:12ff:fe0f:db9d/64 scope link 
-       valid_lft forever preferred_lft forever
-busybox:$ ip route
-192.168.100.0/24 dev veth1 scope link  src 192.168.100.100 
-```
-
-И работу сети
-```shell
-# В контейнере поднимаем tcp сервер
-busybox:$ nc -vl -p 8080
-listening on [::]:8080 ...
-
-# На хосте отправляем в контейнер сообщение
-echo "Hi" | nc -v 192.168.100.100 8080
-```
-
-В контейнере должны увидеть
-
-```text
-connect to [::ffff:192.168.100.100]:8080 from (null) ([::ffff:192.168.100.200]:25746)
-Hi
-```
-
-Для подключения к контейнеру с хоста нужно выполнить:
-
-```shell
-PID=$(ps -C unshare -o pid=); \
-sudo nsenter -a -t $PID chroot /tmp/container /busybox sh
-```
+![img](pic/docker-run.png)
